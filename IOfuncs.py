@@ -10,6 +10,8 @@ import s3fs
 import numcodecs as ncd
 import pickle
 
+fs = s3fs.S3FileSystem(anon=True)
+
 #this assumes that visibility is always the first value reported in standard miles (ending in SM) in the metar
 def find_visibility(metar):
     metar_list = metar.split(' ')
