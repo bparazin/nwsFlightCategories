@@ -108,3 +108,120 @@ def retrieve_data(s3_url):
             data_array = np.reshape(chunk, (num_entries, 150, 150))
 
     return data_array
+
+def download_hrrr(datetime, point_lat, point_lon, var_list=None):
+    #set default var_list
+    if var_list is None:
+        var_list = [('TMP', 'surface'),
+            ('TMP', '500mb'),
+            ('TMP', '700mb'),
+            ('TMP', '850mb'),
+            ('TMP', '925mb'),
+            ('TMP', '1000mb'),
+            ('VGRD', '10m_above_ground'),
+            ('UGRD', '10m_above_ground'),
+            ('VGRD', '250mb'),
+            ('UGRD', '250mb'),
+            ('VGRD', '300mb'),
+            ('UGRD', '300mb'),
+            ('VGRD', '500mb'),
+            ('UGRD', '500mb'),
+            ('VGRD', '700mb'),
+            ('UGRD', '700mb'),
+            ('VGRD', '850mb'),
+            ('UGRD', '850mb'),
+            ('VGRD', '925mb'),
+            ('UGRD', '925mb'),
+            ('VGRD', '1000mb'),
+            ('UGRD', '1000mb'),
+            ('DPT', '2m_above_ground'),
+            ('DPT', '500mb'),
+            ('DPT', '700mb'),
+            ('DPT', '850mb'),
+            ('DPT', '925mb'),
+            ('DPT', '1000mb'),
+            ('HGT', 'cloud_base'),
+            ('HGT', 'cloud_ceiling'),
+            ('VIS', 'surface')]
+        
+    chunk_index = xr.open_zarr(s3fs.S3Map("s3://hrrrzarr/grid/HRRR_chunk_index.zarr", s3=fs))
+    #this is just the projection that hrrr uses
+    projection = ccrs.LambertConformal(central_longitude=262.5, 
+                                       central_latitude=38.5, 
+                                       standard_parallels=(38.5, 38.5),
+                                        globe=ccrs.Globe(semimajor_axis=6371229,
+                                                         semiminor_axis=6371229))
+
+    x, y = projection.transform_point(point_lon, point_lat, ccrs.PlateCarree())
+
+    nearest_point = chunk_index.sel(x=x, y=y, method="nearest")
+    fcst_chunk_id = f"0.{nearest_point.chunk_id.values}"
+
+    date = str(datetime)[:10].replace('-','')
+    hr = str(datetime)[11:13]
+    hrrr_df = pd.DataFrame()
+    for (var, level) in var_list:
+        data_url = f'hrrrzarr/sfc/{date}/{date}_{hr}z_fcst.zarr/{level}/{var}/{level}/{var}/'
+        data = retrieve_data(data_url + fcst_chunk_id)
+        gridpoint_forecast = data[:, nearest_point.in_chunk_x, nearest_point.in_chunk_y]
+        hrrr_df[f'{var}_{level}'] = gridpoint_forecast
+    return hrrr_df
+
+def download_glamp(datetime, station):
+    base_url = 'https://mesonet.agron.iastate.edu/api/1/mos.json'
+    
+    params = {'station': station,
+              'model': 'LAV',
+              'runtime': datetime}
+    response = requests.get(base_url, params=params)
+    if response.status_code==404:
+        return pd.DataFrame()
+    data = response.json()['data']
+    result = pd.DataFrame(data)
+    return result
+
+def get_metar_at_time(ref_time, path):
+    full_metar_list = pd.read_csv(path)
+    ref_time = f'{str(ref_time)[:12]}{(int(str(ref_time)[12]) - 1) % 24}:54'
+    
+    return full_metar_list[full_metar_list['valid']==ref_time]
+
+def get_glamp_at_time(datetime, path, station, download=False):
+    timestamp = int(str(datetime)[11:13])
+    if timestamp < 6:
+        initalization_time = '00:00'
+    elif timestamp < 12:
+        initalization_time = '06:00'
+    elif timestamp < 18:
+        initalization_time = '12:00'
+    else: 
+        initalization_time = '18:00'
+    glamp_run_time = f'{str(datetime)[:10]}T{initalization_time}Z'
+    
+    fname = glamp_run_time[:13]+'Z.csv'
+    if fname in listdir(path):
+        return pd.read_csv(path + fname)
+    else:
+        if download:
+            print('File not found, downloading it. This may take a minute depending on connection')
+            data = download_glamp(glamp_run_time, station)
+            data.to_csv(path + fname)
+            return data
+        else:
+            print('File not found, please download it')
+
+def get_hrrr_at_time(datetime, path, lat, lon, download=False, var_list=None):
+    date = str(datetime)[:10].replace('-','')
+    hr = str(datetime)[11:13]
+    fname = f'{date}{hr}.csv'
+    
+    if fname in listdir(path):
+        return pd.read_csv(path + fname)
+    else:
+        if download:
+            print('File not found, downloading it. This may take a minute depending on connection')
+            data = download_hrrr(datetime, lat, lon, var_list=var_list)
+            data.to_csv(path + fname)
+            return data
+        else:
+            print('File not found, please download it')
