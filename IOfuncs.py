@@ -175,14 +175,18 @@ def download_glamp(datetime, station):
               'runtime': datetime}
     response = requests.get(base_url, params=params)
     if response.status_code==404:
-        return pd.DataFrame()
+        raise Exception('File not found on database')
     data = response.json()['data']
     result = pd.DataFrame(data)
     return result
 
-def get_metar_at_time(ref_time, path):
+def get_metar_at_time(datetime, path):
     full_metar_list = pd.read_csv(path)
-    ref_time = f'{str(ref_time)[:12]}{(int(str(ref_time)[12]) - 1) % 24}:54'
+    hr = (int(str(datetime)[11:13]) - 1) % 24
+    if len(str(hr)) == 1:
+        hr = '0' + str(hr)
+    
+    ref_time = f'{str(datetime)[:11]}{hr}:54'
     
     return full_metar_list[full_metar_list['valid']==ref_time]
 
@@ -203,25 +207,25 @@ def get_glamp_at_time(datetime, path, station, download=False):
         return pd.read_csv(path + fname)
     else:
         if download:
-            print('File not found, downloading it. This may take a minute depending on connection')
+            print('Glamp file not found, downloading it. This may take a minute depending on connection')
             data = download_glamp(glamp_run_time, station)
             data.to_csv(path + fname)
             return data
         else:
-            print('File not found, please download it')
+            print('Glamp file not found, please download it')
 
 def get_hrrr_at_time(datetime, path, lat, lon, download=False, var_list=None):
     date = str(datetime)[:10].replace('-','')
     hr = str(datetime)[11:13]
-    fname = f'{date}{hr}.csv'
+    fname = f'{date}{hr}_{lat}_{lon}.csv'
     
     if fname in listdir(path):
         return pd.read_csv(path + fname)
     else:
         if download:
-            print('File not found, downloading it. This may take a minute depending on connection')
+            print('Hrrr file not found, downloading it. This may take a minute depending on connection')
             data = download_hrrr(datetime, lat, lon, var_list=var_list)
             data.to_csv(path + fname)
             return data
         else:
-            print('File not found, please download it')
+            print('Hrrr file not found, please download it')
