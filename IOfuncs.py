@@ -182,13 +182,11 @@ def download_glamp(datetime, station):
 
 def get_metar_at_time(datetime, path):
     full_metar_list = pd.read_csv(path)
-    hr = (int(str(datetime)[11:13]) - 1) % 24
-    if len(str(hr)) == 1:
-        hr = '0' + str(hr)
+    date_list = pd.to_datetime(full_metar_list['valid'])
+    seconds_list = [abs(delta.total_seconds()) for delta in (date_list-datetime)]
+    metar_index = np.argmin(seconds_list)
     
-    ref_time = f'{str(datetime)[:11]}{hr}:54'
-    
-    return full_metar_list[full_metar_list['valid']==ref_time]
+    return full_metar_list.iloc[metar_index]
 
 def get_glamp_at_time(datetime, path, station, download=False):
     timestamp = int(str(datetime)[11:13])
@@ -207,12 +205,9 @@ def get_glamp_at_time(datetime, path, station, download=False):
         return pd.read_csv(path + fname)
     else:
         if download:
-            print('Glamp file not found, downloading it. This may take a minute depending on connection')
             data = download_glamp(glamp_run_time, station)
             data.to_csv(path + fname)
             return data
-        else:
-            print('Glamp file not found, please download it')
 
 def get_hrrr_at_time(datetime, path, lat, lon, download=False, var_list=None):
     date = str(datetime)[:10].replace('-','')
@@ -223,9 +218,6 @@ def get_hrrr_at_time(datetime, path, lat, lon, download=False, var_list=None):
         return pd.read_csv(path + fname)
     else:
         if download:
-            print('Hrrr file not found, downloading it. This may take a minute depending on connection')
             data = download_hrrr(datetime, lat, lon, var_list=var_list)
             data.to_csv(path + fname)
             return data
-        else:
-            print('Hrrr file not found, please download it')
