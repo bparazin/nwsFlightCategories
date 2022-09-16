@@ -198,6 +198,9 @@ def parse_metar_wxcode(code):
     #These are all prime numbers, by multiplying out the codes that appear each unique wx code produces a unique number by
     #unique factorization
     result = 1
+    if isinstance(code, float):
+        return code
+    
     for wxcode in WX_CAT:
         if wxcode in code:
             result *= WX_CAT[wxcode]
@@ -213,13 +216,13 @@ def read_metar(metar_path):
     CLOUD_CATS = {'FEW': 0, 'SCT': 1, 'BKN': 2, 'OVC': 3}
     
     metar = pd.read_csv(metar_path)
-    metar['p01i'].map(parse_hourly_precip)
-    metar['skyc1'].map(CLOUD_CATS)
-    metar['skyc2'].map(CLOUD_CATS)
-    metar['skyc3'].map(CLOUD_CATS)
-    metar['skyc4'].map(CLOUD_CATS)
+    metar['p01i'] = metar['p01i'].map(parse_hourly_precip)
+    metar['skyc1'] = metar['skyc1'].map(CLOUD_CATS)
+    metar['skyc2'] = metar['skyc2'].map(CLOUD_CATS)
+    metar['skyc3'] = metar['skyc3'].map(CLOUD_CATS)
+    metar['skyc4'] = metar['skyc4'].map(CLOUD_CATS)
     
-    metar['wxcodes'].map(parse_metar_wxcode)
+    metar['wxcodes'] = metar['wxcodes'].map(parse_metar_wxcode)
     
     return metar
 
@@ -256,12 +259,13 @@ def get_glamp_at_time(datetime, path, station, download=False):
             result = download_glamp(glamp_run_time, station)
             result.to_csv(path + fname)
             
-    result['cc1'].map(CC1_CATS)
-    result['cld'].map(CLD_CATS)
-    result['lc1'].map(CC1_CATS)
-    result['obv'].map(OBV_CATS)
-    result['pco'].map(PC_CATS)
-    result['typ'].map(TYP_CATS)
+    result['cc1'] = result['cc1'].map(CC1_CATS)
+    result['cld'] = result['cld'].map(CLD_CATS)
+    result['lc1'] = result['lc1'].map(CC1_CATS)
+    result['obv'] = result['obv'].map(OBV_CATS)
+    result['pco'] = result['pco'].map(PC_CATS)
+    result['pc1'] = result['pc1'].map(PC_CATS)
+    result['typ'] = result['typ'].map(TYP_CATS)
     
     return result
 
