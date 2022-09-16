@@ -9,6 +9,7 @@ import cartopy.crs as ccrs
 import s3fs
 import numcodecs as ncd
 import pickle
+import datetime as dt
 
 fs = s3fs.S3FileSystem(anon=True)
 
@@ -175,17 +176,58 @@ def download_glamp(datetime, station):
               'runtime': datetime}
     response = requests.get(base_url, params=params)
     if response.status_code==404:
-        raise Exception('File not found on database')
+        raise FileNotFoundError('File not found on database')
     data = response.json()['data']
     result = pd.DataFrame(data)
     return result
 
-def get_metar_at_time(datetime, path):
-    full_metar_list = pd.read_csv(path)
-    date_list = pd.to_datetime(full_metar_list['valid'])
-    seconds_list = [abs(delta.total_seconds()) for delta in (date_list-datetime)]
-    metar_index = np.argmin(seconds_list)
+#helper func for get_metar_at_time
+def get_seconds(delta):
+    return delta.total_seconds()
+
+def parse_hourly_precip(value):
+    if value == 'T':
+        return 0.05
+    else:
+        return value
     
+def parse_metar_wxcode(code):
+    WX_CAT = {'MI': 2, 'PR': 3, 'BC': 5, 'DR': 7, 'BL': 11, 'SH': 13, 'TS': 17, 'FZ': 19, 'DZ': 23, 'RA': 29, 'SN': 31, 'SG': 37, 'IC': 41, 'PL': 43,
+              'GR': 47, 'GS': 53, 'UP': 59, 'BR': 61, 'FG': 67, 'FU': 71, 'VA': 73, 'DU': 79, 'SA': 83, 'HZ': 89, 'PY': 97, 'PO': 101, 'SQ': 103, 'FC': 107,
+              'SS': 109}
+    #These are all prime numbers, by multiplying out the codes that appear each unique wx code produces a unique number by
+    #unique factorization
+    result = 1
+    for wxcode in WX_CAT:
+        if wxcode in code:
+            result *= WX_CAT[wxcode]
+    if '+' in code:
+        result += 0.5
+    if '-' in code:
+        result -= 0.5
+    return result
+    
+
+def read_metar(metar_path):
+    
+    CLOUD_CATS = {'FEW': 0, 'SCT': 1, 'BKN': 2, 'OVC': 3}
+    
+    metar = pd.read_csv(metar_path)
+    metar['p01i'].map(parse_hourly_precip)
+    metar['skyc1'].map(CLOUD_CATS)
+    metar['skyc2'].map(CLOUD_CATS)
+    metar['skyc3'].map(CLOUD_CATS)
+    metar['skyc4'].map(CLOUD_CATS)
+    
+    metar['wxcodes'].map(parse_metar_wxcode)
+    
+    return metar
+
+def get_metar_at_time(datetime, full_metar_list):
+    if isinstance(full_metar_list, str):
+        full_metar_list = pd.read_csv(full_metar_list)
+    date_list = np.abs(pd.to_datetime(full_metar_list['valid']) - datetime)
+    metar_index = np.argmin(date_list)
     return full_metar_list.iloc[metar_index]
 
 def get_glamp_at_time(datetime, path, station, download=False):
@@ -200,14 +242,28 @@ def get_glamp_at_time(datetime, path, station, download=False):
         initalization_time = '18:00'
     glamp_run_time = f'{str(datetime)[:10]}T{initalization_time}Z'
     
+    CC1_CATS = {'N': 0, 'L': 1, 'M': 2, 'H': 3}
+    CLD_CATS = {'CL': 0, 'FW': 1, 'SC': 2, 'BK': 3, 'OV': 4}
+    OBV_CATS = {'N': 0, 'HZ': 1, 'BR': 2, 'FG': 3, 'BL':4 }
+    PC_CATS = {'N': 0, 'Y': 1}
+    TYP_CATS = {'S': 0, 'Z': 1, 'R': 2, 'X': 3}
+    
     fname = glamp_run_time[:13]+'Z.csv'
     if fname in listdir(path):
-        return pd.read_csv(path + fname)
+        result = pd.read_csv(path + fname)
     else:
         if download:
-            data = download_glamp(glamp_run_time, station)
-            data.to_csv(path + fname)
-            return data
+            result = download_glamp(glamp_run_time, station)
+            result.to_csv(path + fname)
+            
+    result['cc1'].map(CC1_CATS)
+    result['cld'].map(CLD_CATS)
+    result['lc1'].map(CC1_CATS)
+    result['obv'].map(OBV_CATS)
+    result['pco'].map(PC_CATS)
+    result['typ'].map(TYP_CATS)
+    
+    return result
 
 def get_hrrr_at_time(datetime, path, lat, lon, download=False, var_list=None):
     date = str(datetime)[:10].replace('-','')
