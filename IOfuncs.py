@@ -275,9 +275,10 @@ def get_hrrr_at_time(datetime, path, lat, lon, download=False, var_list=None):
     fname = f'{date}{hr}_{lat}_{lon}.csv'
     
     if fname in listdir(path):
-        return pd.read_csv(path + fname)
+        data = pd.read_csv(path + fname) 
     else:
         if download:
             data = download_hrrr(datetime, lat, lon, var_list=var_list)
             data.to_csv(path + fname)
-            return data
+    data = data.replace([np.inf, -np.inf], -99999)
+    return data
