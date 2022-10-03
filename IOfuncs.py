@@ -13,42 +13,6 @@ import datetime as dt
 
 fs = s3fs.S3FileSystem(anon=True)
 
-#this assumes that visibility is always the first value reported in standard miles (ending in SM) in the metar
-def find_visibility(metar):
-    metar_list = metar.split(' ')
-    for i,datapoint in enumerate(metar_list):
-        if datapoint[-2:] == 'SM':
-            if metar_list[i][0] == 'M':
-                #special case to cover >1/4SM visibility
-                return 0.125
-            else:
-                return float(Fraction(metar_list[i][:-2]))
-#these two rely on broken and overcast being the first two things with the leading characters BKN and OVC. Both return None 
-#if they don't feature in the METAR
-def find_broken_height(metar):
-    metar_list = metar.split(' ')
-    for i,datapoint in enumerate(metar_list):
-        if datapoint[:3] == 'BKN':
-            return 100 * int(metar_list[i][3:6])
-    return None
-
-def find_overcast_height(metar):
-    metar_list = metar.split(' ')
-    for i,datapoint in enumerate(metar_list):
-        if datapoint[:3] == 'OVC':
-            return 100 * int(metar_list[i][3:6])
-    return None
-
-#Just combines the two above, handling all the NONE cases
-def find_ceiling_height(metar):
-    if find_overcast_height(metar) is None and find_broken_height(metar) is None:
-        return None
-    if find_overcast_height(metar) is None:
-        return find_broken_height(metar)
-    if find_broken_height(metar) is None:
-        return find_overcast_height(metar)
-    return min(find_overcast_height(metar), find_broken_height(metar))
-
 #This uses the fact that the timestamp of the METAR is always ddttttZ, allowing for easy conversion to 24-hour Zulu time by trimming the ends
 #Then this just looks at the last 6-hour mark preceding that timestamp
 def GLAMPstamp(metar):
@@ -209,6 +173,35 @@ def parse_metar_wxcode(code):
     if '-' in code:
         result -= 0.5
     return result
+
+def get_conditions_from_asos(time, asos_path):
+    metar_at_time = get_metar_at_time(time, asos_path)
+    vis = metar_at_time['vsby']
+    cld_list = np.asarray(metar_at_time[['skyc1', 'skyc2', 'skyc3', 'skyc4']])
+    hgt_list = np.asarray(metar_at_time[['skyl1', 'skyl2', 'skyl3', 'skyl4']])
+    ovc_hgt = 100000
+    bkn_hgt = 100000
+
+    if 3 in list(cld_list):
+        ovc_hgt = hgt_list[cld_list == 3]
+        if len(ovc_hgt) > 1:
+            ovc_hgt = np.min(ovc_hgt)
+    if 2 in list(cld_list):
+        bkn_hgt = hgt_list[cld_list == 2]
+        if len(bkn_hgt) > 1:
+            bkn_hgt = np.min(bkn_hgt)
+    ceiling = np.min([ovc_hgt, bkn_hgt])
+
+    if ceiling < 500 or vis < 1:
+        conditions = 0
+    elif ceiling < 1000 or vis < 3:
+        conditions = 1
+    elif ceiling < 3000 or vis < 5:
+        conditions = 2
+    else:
+        conditions = 3
+    
+    return conditions
     
 
 def read_metar(metar_path):
@@ -223,6 +216,8 @@ def read_metar(metar_path):
     metar['skyc4'] = metar['skyc4'].map(CLOUD_CATS)
     
     metar['wxcodes'] = metar['wxcodes'].map(parse_metar_wxcode)
+    
+    metar.rename(pd.to_datetime(metar['valid']), inplace=True)
     
     return metar
 
