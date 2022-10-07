@@ -74,7 +74,7 @@ def retrieve_data(s3_url):
 
     return data_array
 
-def download_hrrr(datetime, point_lat, point_lon, var_list=None):
+def download_hrrr(datetime, point_lat, point_lon, radius=1, var_list=None):
     #set default var_list
     if var_list is None:
         var_list = [('TMP', 'surface'),
